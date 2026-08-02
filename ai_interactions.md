@@ -55,3 +55,36 @@ I verified that the output correctly showed tasks from both pets labeled with `[
 <!-- Your conclusion -->
 
 I used agent mode for implementation tasks and chat mode for planning and understanding. Agent mode was faster and more reliable for multi-file changes, while chat mode helped me understand what the agent was doing before accepting its edits.
+
+---
+
+## Known Limitation: Task time not honored in scheduling
+
+**Request given to the agent (via `test_agent.py`):**
+
+```
+Add a 30 minute walk for Biscuit at 9am, high priority, category exercise, then generate today's plan and explain it
+```
+
+**Final response:**
+
+```
+Done! Here's a summary of what I set up:
+**Task added:** A 30-minute Walk for Biscuit (HIGH priority, exercise category).
+**Today's plan:**
+- **08:00** — [Biscuit] Walk (30 min) [HIGH]
+**Total scheduled:** 30 min out of 120 available minutes — so you've got plenty of room to spare, with no conflicts.
+One thing to note: you requested the walk at **9:00 AM**, but the generated plan scheduled it at **08:00** (the default start time). If you'd like it firmly at 9:00 AM, let me know and I can re-add it with that time locked in.
+```
+
+**Trace:**
+
+```
+('add_task', {'pet_name': 'Biscuit', 'name': 'Walk', 'duration_minutes': 30, 'priority': 'HIGH', 'category': 'exercise', 'time': '09:00'}, "Added task 'Walk' to Biscuit.")
+('generate_plan', {}, '{"plan": ["08:00 Walk"], "warnings": []}')
+('explain', {}, "Daily plan for Alex's pets (Biscuit):\n  Available: 120 min\n\n  08:00 — [Biscuit] Walk (30 min) [HIGH]\n\n  Total scheduled: 30 min")
+```
+
+**Explanation:**
+
+`Task.time` was correctly stored as `"09:00"` on `add_task`, but `Scheduler.generate_plan()` only uses `Task.time` as a sort key (`pawpal_system.py`, `sorted_tasks` key: `(priority.order, Time.fromisoformat(t.time), duration_minutes)`). Actual slot assignment ignores it entirely — slots are computed by walking sequentially from `owner.day_start_hour`, incrementing by each task's `duration_minutes` in sorted order. As a result, the task was placed at `08:00` instead of the requested `09:00`, even though the agent (correctly, per its trace) had recorded `09:00` as the task's preferred time. The agent noticed and flagged the mismatch in its response, but this is a real gap between `Task.time` (advisory, sort-only) and the plan's actual slots — an LLM agent reporting the plan verbatim would otherwise state a task was scheduled at a time it wasn't.
