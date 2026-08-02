@@ -1,0 +1,46 @@
+flowchart TD
+    User([User request])
+    Run["PawPalAgent.run()"]
+    Claude["Claude API\n(tool selection)"]
+    FinalText{"Final text\nresponse?\n(no tool_use blocks)"}
+    Output([Output to user])
+
+    subgraph Guardrails["GuardrailChecker — reliability / human-oversight layer"]
+        direction TB
+        ValidateIn["validate_input()\nchecks duration_minutes,\ntime format"]
+        InDecision{"Valid?"}
+        RealCall["Real Scheduler / Pet\nmethod call\n(add_task, remove_task,\ngenerate_plan, explain, ...)"]
+        IsGeneratePlan{"Was the call\ngenerate_plan?"}
+        ValidateOut["validate_output()\nis_overbooked() +\nconflicts() checks,\nlogs warnings"]
+    end
+
+    Trace[("ReasoningTrace\n(self.trace)")]
+
+    User --> Run
+    Run --> Claude
+    Claude --> FinalText
+    FinalText -- "yes" --> Output
+
+    FinalText -- "no: tool_use block(s)" --> ValidateIn
+    ValidateIn --> InDecision
+
+    InDecision -- "reject" --> RejectResult["tool_result\nis_error=True"]
+    RejectResult --> Trace
+    RejectResult -- "sent back as tool_result" --> Claude
+
+    InDecision -- "pass" --> RealCall
+    RealCall --> IsGeneratePlan
+
+    IsGeneratePlan -- "yes" --> ValidateOut
+    ValidateOut -- "warnings appended\nto trace" --> Trace
+    ValidateOut --> ResultOut["tool_result"]
+
+    IsGeneratePlan -- "no" --> ResultOut
+
+    ResultOut --> Trace
+    ResultOut -- "sent back as tool_result,\nloop continues" --> Claude
+
+    style Guardrails fill:#fff3cd,stroke:#b58900,stroke-width:2px
+    style ValidateIn fill:#ffe9a8,stroke:#b58900
+    style ValidateOut fill:#ffe9a8,stroke:#b58900
+    style Trace fill:#e6f2ff,stroke:#3366cc
